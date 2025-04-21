@@ -3,3 +3,4 @@ A scraper made to fetch all events happening in Qatar from various sources. This
 
 # Currently supported sources:
 - iloveqatar.com
+- visitqatar.com
