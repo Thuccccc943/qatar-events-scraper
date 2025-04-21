@@ -1,147 +1,111 @@
 import json
-from textwrap import fill
-import requests
-from bs4 import BeautifulSoup
-
-url = "https://visitqatar.com/intl-en/events-calendar/all-events"
-
-raw_events_data = ""
-
-try:
-    # Fetch the HTML content
-    response = requests.get(url)
-    response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
-    html_content = response.text
-
-    # Parse the HTML content
-    soup = BeautifulSoup(html_content, "html.parser")
-
-    # Find the vq-event-listing tag
-    # We look for the tag by its name
-    event_listing_tag = soup.find("vq-event-listing")
-
-    if event_listing_tag:
-        # Extract the value of the ':events' attribute
-        # The attribute name is ':events'
-        raw_events_data = event_listing_tag.get(":events")
-
-        if raw_events_data:
-            print("Successfully extracted raw_events_data.")
-            # The raw string data you requested is now in the 'raw_events_data' variable.
-            # You can print it to see its content and copy it.
-            # print(raw_events_data)
-        else:
-            print("The ':events' attribute was not found on the vq-event-listing tag.")
-            raw_events_data = ""
-    else:
-        print("Could not find the 'vq-event-listing' tag on the page.")
-
-except requests.exceptions.RequestException as e:
-    print(f"Error fetching the page: {e}")
-    raw_events_data = ""
-except Exception as e:
-    print(f"An error occurred during parsing or extraction: {e}")
-    raw_events_data = ""
+from typing import List, Dict, Optional
+from models import Event
+from base_scraper import BaseScraper
 
 
-def parse_event_data(raw_events):
-    """Parse the raw event data and return a list of formatted events."""
-    events = []
+class VisitQatarScraper(BaseScraper):
+    def __init__(self):
+        super().__init__("visitqatar")
+        self.base_url = "https://visitqatar.com/intl-en/events-calendar/all-events"
 
-    # The raw data appears to be multiple JSON objects separated by commas
-    # We need to properly format it as a JSON array
-    formatted_data = f"[{raw_events}]"
+    def scrape_events(self) -> List[Event]:
+        try:
+            response = self.make_request(self.base_url)
+            soup = self.parse_html(response.text)
 
-    try:
-        event_list = json.loads(formatted_data)
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON data: {e}")
-        return events
+            # Extract the raw events data from the vq-event-listing tag
+            event_listing_tag = soup.find("vq-event-listing")
+            if not event_listing_tag:
+                print("Could not find the 'vq-event-listing' tag on the page.")
+                return []
 
-    for event in event_list:
-        # Extract relevant information
-        title = event.get("title", "No Title")
-        summary = event.get("summary", "No summary available")
-        description = (
-            event.get("description", "").replace("<p>", "").replace("</p>", "").strip()
-        )
-        category = (
-            ", ".join(event.get("category", []))
-            if event.get("category")
-            else "Uncategorized"
-        )
+            raw_events_data = event_listing_tag.get(":events")
+            raw_events_data = str(raw_events_data)[1:-1]
+            if not raw_events_data:
+                print(
+                    "The ':events' attribute was not found on the vq-event-listing tag."
+                )
+                return []
 
-        # Format dates
-        start_date = event.get("startDate", {})
-        end_date = event.get("endDate", {})
-        start_str = (
-            f"{start_date.get('day', '?')} {start_date.get('monthAndYear', '?')}"
-        )
-        end_str = f"{end_date.get('day', '?')} {end_date.get('monthAndYear', '?')}"
+            # Clean and parse the raw data
+            cleaned_data = self.clean_raw_data(raw_events_data)
+            event_list = json.loads(f"[{cleaned_data}]")
 
-        if start_str == end_str:
-            date_str = start_str
-        else:
-            date_str = f"{start_str} - {end_str}"
+            return [self.transform_event(event) for event in event_list if event]
 
-        location = event.get("location", "Location not specified")
-        directions = event.get("linkToDirections", {}).get("path", "#")
-        is_free = "Free" if event.get("free", False) else "Paid"
-        link = event.get("linkToDetailPage", {}).get("url", "#")
+        except Exception as e:
+            print(f"Error scraping visitqatar events: {e}")
+            return []
 
-        # Format the event information
-        formatted_event = {
-            "title": title,
-            "date": date_str,
-            "start_date": start_str,
-            "end_date": end_str,
-            "category": category,
-            "location": location,
-            "directions": directions,
-            "price": is_free,
-            "summary": summary,
-            "description": description,
-            "link": link,
+    def clean_raw_data(self, raw_data: str) -> str:
+        """Clean the raw events data string"""
+        # Remove surrounding quotes if present
+        if raw_data.startswith("'") and raw_data.endswith("'"):
+            raw_data = raw_data[1:-1]
+
+        # Replace HTML entities
+        replacements = {
+            "&#34;": '"',
+            "&amp;": "&",
+            "&nbsp;": " ",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&#39;": "'",
+            "\n": "",
         }
 
-        events.append(formatted_event)
+        for old, new in replacements.items():
+            raw_data = raw_data.replace(old, new)
 
-    return events
+        return raw_data
 
+    def transform_event(self, raw_event: Dict) -> Event:
+        """Transform raw event data into standardized Event object"""
+        # Format dates
+        start_date = raw_event.get("startDate", {})
+        end_date = raw_event.get("endDate", {})
 
-def display_events(events):
-    """Display the events in a pretty format."""
-    for i, event in enumerate(events, 1):
-        print(f"\n{'=' * 50}")
-        print(f"EVENT #{i}: {event['title'].upper()}")
-        print(f"{'=' * 50}")
-        print(f"📅 Date: {event['date']}")
-        print(f"Start Date: {event['start_date']}")
-        print(f"End Date: {event['end_date']}")
-        print(f"🏷️ Category: {event['category']}")
-        print(f"📍 Location: {event['location']}")
-        print(f"Directions: {event['directions']}")
-        print(f"💰 Admission: {event['price']}")
-        print(f"\nℹ️ Summary: {event['summary']}")
+        start_date_str = (
+            f"{start_date.get('day', '?')} {start_date.get('monthAndYear', '?')}"
+        )
+        end_date_str = f"{end_date.get('day', '?')} {end_date.get('monthAndYear', '?')}"
 
-        if event["description"]:
-            print("\n📝 Description:")
-            print(fill(event["description"], width=70))
+        # Format time if available
+        time_info = raw_event.get("time", {})
+        time_str = None
+        start_time = end_time = None
 
-        print(f"\n🔗 More info: {event['link']}")
-        print(f"{'-' * 50}")
+        if isinstance(time_info, dict):
+            time_str = time_info.get("formatted12Hour", "")
+            if " - " in time_str:
+                start_time, end_time = time_str.split(" - ", 1)
 
+        # Format categories
+        categories = raw_event.get("category", [])
+        category_str = ", ".join(categories) if categories else None
 
-if __name__ == "__main__":
-    raw_events_data = str(raw_events_data)[1:-1]
-    cleaned_data = (
-        raw_events_data.replace("&#34;", '"')
-        .replace("&amp;", "&")
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&#39;", "'")
-        .replace("\n", "")
-    )
-    parsed_events = parse_event_data(cleaned_data)
-    display_events(parsed_events)
+        # Format location
+        location = raw_event.get("location", "Location not specified")
+        if isinstance(location, dict):
+            location = location.get("name", "Location not specified")
+
+        return Event(
+            title=raw_event.get("title", "No Title"),
+            start_date=start_date_str,
+            end_date=end_date_str,
+            time=time_str,
+            start_time=start_time,
+            end_time=end_time,
+            location=location,
+            description=raw_event.get("description", "")
+            .replace("<p>", "")
+            .replace("</p>", "")
+            .strip(),
+            directions=raw_event.get("linkToDirections", {}).get("path", None),
+            category=category_str,
+            price="Free" if raw_event.get("free", False) else "Paid",
+            link=raw_event.get("linkToDetailPage", {}).get("url", "#"),
+            source=self.source_name,
+            raw_data={"original_data": raw_event, "categories": categories},
+        )
