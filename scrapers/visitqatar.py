@@ -85,6 +85,7 @@ def parse_event_data(raw_events):
             date_str = f"{start_str} - {end_str}"
 
         location = event.get("location", "Location not specified")
+        directions = event.get("linkToDirections", {}).get("path", "#")
         is_free = "Free" if event.get("free", False) else "Paid"
         link = event.get("linkToDetailPage", {}).get("url", "#")
 
@@ -96,6 +97,7 @@ def parse_event_data(raw_events):
             "end_date": end_str,
             "category": category,
             "location": location,
+            "directions": directions,
             "price": is_free,
             "summary": summary,
             "description": description,
@@ -118,6 +120,7 @@ def display_events(events):
         print(f"End Date: {event['end_date']}")
         print(f"🏷️ Category: {event['category']}")
         print(f"📍 Location: {event['location']}")
+        print(f"Directions: {event['directions']}")
         print(f"💰 Admission: {event['price']}")
         print(f"\nℹ️ Summary: {event['summary']}")
 
