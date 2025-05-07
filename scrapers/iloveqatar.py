@@ -7,7 +7,7 @@ import re
 class ILoveQatarScraper(BaseScraper):
     def __init__(self):
         super().__init__("iloveqatar")
-        self.base_url = "https://www.iloveqatar.net/events/sports/p{page_num}"
+        self.base_url = "https://www.iloveqatar.net/events/p{page_num}"
 
     def scrape_events(self, pages: int = 1) -> List[Event]:
         all_events = []
@@ -41,6 +41,11 @@ class ILoveQatarScraper(BaseScraper):
             response = self.make_request(url)
             soup = self.parse_html(response.content)
 
+            category = "general"
+            url_parts = url.split("/")
+            if len(url_parts) > 5 and url_parts[4] == "events":
+                category = url_parts[5].lower()
+
             # Extract title
             title = (
                 soup.find("h1").get_text(strip=True) if soup.find("h1") else "No title"
@@ -60,11 +65,14 @@ class ILoveQatarScraper(BaseScraper):
                 if time_item
                 else "No time"
             )
+            print("Parsing event now")
+            print(time)
 
             # Parse date and time into start/end
             start_date, end_date, start_time, end_time = self.parse_date_time(
                 date, time
             )
+            print(start_date, end_date, start_time, end_time)
 
             # Extract location
             location_item = soup.find("div", class_="events-page-info__item _location")
@@ -92,10 +100,11 @@ class ILoveQatarScraper(BaseScraper):
             )
 
             # Extract description
-            description_div = soup.find("div", class_="article__content")
-            description = (
-                description_div.get_text("\n", strip=True) if description_div else ""
-            )
+            description_div = soup.find("div", {"class": "events-page-info"})
+            # Find all p tags within this div
+            paragraphs = description_div.find_all("p")
+            # Combine all paragraphs into one string with proper spacing
+            description = "\n\n".join(p.get_text(strip=True) for p in paragraphs)
 
             return {
                 "title": title,
@@ -108,6 +117,7 @@ class ILoveQatarScraper(BaseScraper):
                 "tickets": tickets,
                 "prices": prices,
                 "description": description,
+                "category": category,
                 "link": url,
                 "raw_data": {  # Store raw selectors for debugging
                     "date": str(date_item),
@@ -126,8 +136,16 @@ class ILoveQatarScraper(BaseScraper):
         return text.strip()
 
     def parse_date_time(self, date_str: str, time_str: str) -> tuple:
-        """Parse date and time strings into start/end components"""
-        # Clean the strings first
+        """Parse date and time strings into start/end components
+
+        Args:
+            date_str: Date string (e.g., "4 May 2025\n- 7 May 2025")
+            time_str: Time string (e.g., "08:30 am\n- 04:00 pm")
+
+        Returns:
+            tuple: (start_date, end_date, start_time, end_time)
+        """
+        # Clean the strings first - remove extra whitespace, newlines
         date_str = self.clean_text(date_str)
         time_str = self.clean_text(time_str)
 
@@ -135,17 +153,34 @@ class ILoveQatarScraper(BaseScraper):
         start_date = end_date = date_str
         start_time = end_time = time_str
 
-        # Try to extract date range (e.g., "25 - 26 December 2023")
-        date_range_match = re.match(r"(\d+)\s*-\s*(\d+)\s*(.*)", date_str)
-        if date_range_match:
-            day1, day2, month_year = date_range_match.groups()
-            start_date = f"{day1} {month_year}"
-            end_date = f"{day2} {month_year}"
+        # Handle date range - multiple formats:
+        # 1. "4 May 2025 - 7 May 2025"
+        # 2. "4 May 2025\n- 7 May 2025"
+        # 3. "28 May 2025\n- 29 May 2025"
 
-        # Try to extract time range (e.g., "6:00 PM - 10:00 PM")
-        time_range_match = re.match(r"(.+)\s*-\s*(.+)", time_str)
-        if time_range_match:
-            start_time, end_time = time_range_match.groups()
+        # First try splitting on hyphen with optional whitespace/newlines
+        date_parts = re.split(r"\s*-\s*", date_str)
+        if len(date_parts) == 2:
+            start_date = date_parts[0].strip()
+            end_date = date_parts[1].strip()
+        else:
+            # Alternative format: "25 - 26 December 2023"
+            date_range_match = re.match(r"(\d+)\s*-\s*(\d+)\s*(.*)", date_str)
+            if date_range_match:
+                day1, day2, month_year = date_range_match.groups()
+                start_date = f"{day1} {month_year}"
+                end_date = f"{day2} {month_year}"
+
+        # Handle time range - similar approach
+        time_parts = re.split(r"\s*-\s*", time_str)
+        if len(time_parts) == 2:
+            start_time = time_parts[0].strip()
+            end_time = time_parts[1].strip()
+        else:
+            # Alternative time format handling if needed
+            time_range_match = re.match(r"(.+)\s*-\s*(.+)", time_str)
+            if time_range_match:
+                start_time, end_time = time_range_match.groups()
 
         return start_date, end_date, start_time, end_time
 
@@ -160,10 +195,10 @@ class ILoveQatarScraper(BaseScraper):
             end_time=raw_event["end_time"],
             location=raw_event["location"],
             description=raw_event["description"],
+            category=raw_event["category"],
             price=raw_event["prices"],
             tickets=raw_event["tickets"],
             link=raw_event["link"],
             source=self.source_name,
             raw_data=raw_event.get("raw_data"),
         )
-
