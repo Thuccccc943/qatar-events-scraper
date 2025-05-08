@@ -3,6 +3,8 @@ from typing import List, Optional
 import requests
 from bs4 import BeautifulSoup
 from models import Event
+import pandas as pd
+import os
 
 
 class BaseScraper(ABC):
@@ -32,7 +34,7 @@ class BaseScraper(ABC):
         pass
 
     def save_to_csv(self, events: List[Event], filename: str = None):
-        """Save events to CSV with source-specific filename if not provided"""
+        """Append new events to CSV, avoiding duplicates based on title + start_date + location"""
         if not filename:
             filename = f"{self.source_name}_events.csv"
 
@@ -40,11 +42,19 @@ class BaseScraper(ABC):
             print(f"No events to save for {self.source_name}")
             return
 
-        import csv
+        # Convert to DataFrame for easier handling
+        new_df = pd.DataFrame([e.to_dict() for e in events])
 
-        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=Event.get_field_names())
-            writer.writeheader()
-            for event in events:
-                writer.writerow(event.to_dict())
-        print(f"Saved {len(events)} events to {filename}")
+        if os.path.exists(filename):
+            existing_df = pd.read_csv(filename)
+
+            # Define uniqueness based on title + start_date + location
+            combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+            combined_df.drop_duplicates(
+                subset=["title", "start_date", "location"], inplace=True
+            )
+        else:
+            combined_df = new_df
+
+        combined_df.to_csv(filename, index=False, encoding="utf-8")
+        print(f"Updated {filename} with {len(combined_df)} total events.")
