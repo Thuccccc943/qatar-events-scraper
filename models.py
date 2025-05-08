@@ -15,8 +15,8 @@ class Event:
     time: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
-    location: Optional[str] = None
     description: Optional[str] = None
+    location: Optional[str] = None
     link: Optional[str] = None
 
     # Detailed fields (only some scrapers will provide these)
