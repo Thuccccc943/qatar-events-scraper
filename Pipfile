@@ -29,7 +29,6 @@ matplotlib-inline = "==0.1.7"
 nest-asyncio = "==1.6.0"
 numpy = "==2.2.5"
 packaging = "==25.0"
-pandas = "==2.2.3"
 parso = "==0.8.4"
 pexpect = "==4.9.0"
 pillow = "==11.2.1"
@@ -53,6 +52,9 @@ typing-extensions = "==4.13.2"
 tzdata = "==2025.2"
 urllib3 = "==2.4.0"
 wcwidth = "==0.2.13"
+pandas = "*"
+gspread = "*"
+oauth2client = "*"
 
 [dev-packages]
 
