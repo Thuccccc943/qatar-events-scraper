@@ -6,7 +6,7 @@ from base_scraper import BaseScraper
 
 class VisitQatarScraper(BaseScraper):
     def __init__(self):
-        super().__init__("visitqatar")
+        super().__init__("VisitQatar")
         self.base_url = "https://visitqatar.com/intl-en/events-calendar/all-events"
 
     def scrape_events(self) -> List[Event]:

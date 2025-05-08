@@ -5,13 +5,14 @@ import re
 
 
 class ILoveQatarScraper(BaseScraper):
-    def __init__(self):
-        super().__init__("iloveqatar")
+    def __init__(self, pages: int = 1):
+        super().__init__("ILoveQatar")
         self.base_url = "https://www.iloveqatar.net/events/p{page_num}"
+        self.pages = pages
 
-    def scrape_events(self, pages: int = 1) -> List[Event]:
+    def scrape_events(self) -> List[Event]:
         all_events = []
-        for page in range(1, pages + 1):
+        for page in range(1, self.pages + 1):
             print(f"Scraping page {page}...")
             url = self.base_url.format(page_num=page)
             try:

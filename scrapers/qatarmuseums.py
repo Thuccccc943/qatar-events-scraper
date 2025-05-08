@@ -5,14 +5,15 @@ import re
 
 
 class QatarMuseumsScraper(BaseScraper):
-    def __init__(self):
-        super().__init__("qmuseums")
+    def __init__(self, pages: int = 1):
+        super().__init__("QatarMuseums")
         self.base_url = "https://qm.org.qa/en/calendar/?page={page_num}"
+        self.pages = pages
 
-    def scrape_events(self, pages: int = 1) -> List[Event]:
+    def scrape_events(self) -> List[Event]:
         all_events = []
         upperbound = 1
-        for page in range(1, pages + 1):
+        for page in range(1, self.pages + 1):
             print(f"Scraping page {page}...")
             url = self.base_url.format(page_num=page)
             # We've reached the last page
