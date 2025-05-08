@@ -65,14 +65,11 @@ class ILoveQatarScraper(BaseScraper):
                 if time_item
                 else "No time"
             )
-            print("Parsing event now")
-            print(time)
 
             # Parse date and time into start/end
             start_date, end_date, start_time, end_time = self.parse_date_time(
                 date, time
             )
-            print(start_date, end_date, start_time, end_time)
 
             # Extract location
             location_item = soup.find("div", class_="events-page-info__item _location")

@@ -4,7 +4,7 @@ from base_scraper import BaseScraper
 import re
 
 
-class QatarMuseumScraper(BaseScraper):
+class QatarMuseumsScraper(BaseScraper):
     def __init__(self):
         super().__init__("qmuseums")
         self.base_url = "https://qm.org.qa/en/calendar/?page={page_num}"
