@@ -12,3 +12,14 @@ A scraper made to fetch all events happening in Qatar from various sources. This
 - Integration to Google Sheets
 - [Planned] Duplicate handling
 - [Planned] Duplicate handling cross websites
+
+# Dependencies
+```
+$ pip install -r requirements.txt
+```
+
+# Running
+You can run the scraper via jupyter for now, the instructions in the jupyter notebook should be clear.
+```
+$ jupyter notebook
+```
