@@ -13,7 +13,8 @@ executing==2.2.0
 fonttools==4.57.0
 google-auth==2.40.1
 google-auth-oauthlib==1.2.2
-gspread==6.2.0
+gspread==6.2.1
+gspread-formatting==1.2.1
 httplib2==0.22.0
 idna==3.10
 ipykernel==6.29.5

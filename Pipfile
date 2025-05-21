@@ -55,6 +55,7 @@ pandas = "*"
 gspread = "*"
 oauth2client = "*"
 ipykernel = "*"
+gspread-formatting = "*"
 
 [dev-packages]
 
