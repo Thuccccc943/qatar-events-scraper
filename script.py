@@ -47,13 +47,6 @@ except gspread.exceptions.WorksheetNotFound:
         title="Combined", rows="1000", cols="20"
     )
 
-try:
-    worksheets["Copy"] = spreadsheet.worksheet("Working Copy")
-except gspread.exceptions.WorksheetNotFound:
-    worksheets["Copy"] = spreadsheet.add_worksheet(
-        title="Working Copy", rows="1000", cols="20"
-    )
-
 
 ####### Function Definitions #######
 def run_scrapers(scrapers: list) -> List[Event]:
@@ -80,7 +73,6 @@ def run_scrapers(scrapers: list) -> List[Event]:
     if save_to_google_sheets and all_events:
         combined_df = pd.DataFrame([event.to_dict() for event in all_events])
         append_new_events_to_sheet(combined_df, worksheets["Combined"])
-        append_new_events_to_sheet(combined_df, worksheets["Copy"])
 
     return all_events
 
