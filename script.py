@@ -215,7 +215,12 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
     )
 
     for _, event_data_series in df_for_insertion.iterrows():
-        row_values = [""]
+        row_values = []
+        """
+        For a newly initialized sheet the below line is necessary for aligning, however, on subsequent runs this line should
+        not be active, I'm foregoing a fix since for our use case it doesn't matter.
+        """
+        # row_values = [""]
         for (
             header_name
         ) in existing_headers:  # Iterate in the order of the sheet's current headers
