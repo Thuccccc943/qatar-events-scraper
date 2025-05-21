@@ -151,7 +151,7 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
             )
             return
 
-        worksheet.update([new_headers], range_name="A1")
+        worksheet.update([new_headers], range_name="B1")
         worksheet.freeze(rows=1)  # Freeze the header row
         print(
             f"Initialized headers for empty sheet '{worksheet.title}' and froze the first row."
@@ -215,7 +215,7 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
     )
 
     for _, event_data_series in df_for_insertion.iterrows():
-        row_values = []
+        row_values = [""]
         for (
             header_name
         ) in existing_headers:  # Iterate in the order of the sheet's current headers
