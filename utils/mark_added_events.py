@@ -11,7 +11,7 @@ scope = [
 creds = ServiceAccountCredentials.from_json_keyfile_name("../credentials.json", scope)
 client = gspread.authorize(creds)
 spreadsheet = client.open("Event Scrapes")
-worksheet = spreadsheet.worksheet("Working Copy")
+worksheet = spreadsheet.worksheet("Combined")
 
 # 1. Read the CSV data
 csv_titles = set()
