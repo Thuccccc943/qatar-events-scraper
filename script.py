@@ -59,7 +59,7 @@ def run_scrapers(scrapers: list) -> List[Event]:
             if save_to_google_sheets:
                 events_df = pd.DataFrame([event.to_dict() for event in events])
                 worksheet = worksheets[scraper.source_name]
-                # append_new_events_to_sheet(events_df, worksheet)
+                append_new_events_to_sheet(events_df, worksheet)
             all_events.extend(events)
             print(f"Found {len(events)} events from {scraper.source_name}")
 
@@ -84,7 +84,7 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
 
     def prepare_key_component(value: any) -> str:
         s = str(value).strip().lower()
-        
+
         # Characters to remove for key generation
         # Focus on apostrophes and similar quote-like characters as per user feedback
         chars_to_remove = ["'", "’", "‘", "`"]
@@ -94,31 +94,41 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
 
     # 1. Sanitize incoming DataFrame (for list conversion, etc.)
     sanitized_df = events_df.copy()
-    def sanitize_df_values(value): # Converts lists in cells to strings
-        if isinstance(value, list): return ", ".join(str(v) for v in value)
+
+    def sanitize_df_values(value):  # Converts lists in cells to strings
+        if isinstance(value, list):
+            return ", ".join(str(v) for v in value)
         return value
+
     for col in sanitized_df.columns:
         sanitized_df[col] = sanitized_df[col].apply(sanitize_df_values)
 
     required_key_cols = ["title", "start_date", "location", "source"]
-    missing_key_cols = [col for col in required_key_cols if col not in sanitized_df.columns]
+    missing_key_cols = [
+        col for col in required_key_cols if col not in sanitized_df.columns
+    ]
     if missing_key_cols:
-        print(f"Warning: Incoming DataFrame for '{worksheet.title}' is missing key columns: {missing_key_cols}. Adding as empty strings for key generation.")
-        for col in missing_key_cols: sanitized_df[col] = ""
-    
+        print(
+            f"Warning: Incoming DataFrame for '{worksheet.title}' is missing key columns: {missing_key_cols}. Adding as empty strings for key generation."
+        )
+        for col in missing_key_cols:
+            sanitized_df[col] = ""
+
     # Create unique keys for new events using prepared (stripped) components
     sanitized_df["unique_key"] = (
-        sanitized_df["title"].apply(prepare_key_component) +
-        sanitized_df["start_date"].apply(prepare_key_component) +
-        sanitized_df["location"].apply(prepare_key_component) +
-        sanitized_df["source"].apply(prepare_key_component)
+        sanitized_df["title"].apply(prepare_key_component)
+        + sanitized_df["start_date"].apply(prepare_key_component)
+        + sanitized_df["location"].apply(prepare_key_component)
+        + sanitized_df["source"].apply(prepare_key_component)
     )
 
     # 2. Get existing data from the sheet
     try:
         all_sheet_cells = worksheet.get_all_values()
     except gspread.exceptions.APIError as e:
-        print(f"Error fetching data from worksheet '{worksheet.title}': {e}. Quota likely exceeded or API issue.")
+        print(
+            f"Error fetching data from worksheet '{worksheet.title}': {e}. Quota likely exceeded or API issue."
+        )
         return
 
     sheet_header_row_from_a1 = []
@@ -129,64 +139,100 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
         if len(all_sheet_cells) > 1:
             sheet_data_rows_from_col_a = all_sheet_cells[1:]
 
-    data_headers_b_onwards = sheet_header_row_from_a1[1:] if len(sheet_header_row_from_a1) > 0 else []
+    data_headers_b_onwards = (
+        sheet_header_row_from_a1[1:] if len(sheet_header_row_from_a1) > 0 else []
+    )
     new_events_to_add_df = pd.DataFrame()
 
     # 3. Handle sheet initialization or prepare existing data for comparison
-    if not data_headers_b_onwards: # If B1 onwards is unheadered
-        print(f"Sheet '{worksheet.title}' has no data headers from B1 onwards. Initializing headers.")
-        headers_for_b1_onwards = [col for col in sanitized_df.columns if col != "unique_key"]
+    if not data_headers_b_onwards:  # If B1 onwards is unheadered
+        print(
+            f"Sheet '{worksheet.title}' has no data headers from B1 onwards. Initializing headers."
+        )
+        headers_for_b1_onwards = [
+            col for col in sanitized_df.columns if col != "unique_key"
+        ]
         if not headers_for_b1_onwards:
-            print(f"Cannot initialize headers for '{worksheet.title}': no data columns in DataFrame (excluding unique_key).")
+            print(
+                f"Cannot initialize headers for '{worksheet.title}': no data columns in DataFrame (excluding unique_key)."
+            )
             return
 
         worksheet.update([headers_for_b1_onwards], range_name="B1")
-        if not sheet_header_row_from_a1: # If A1 was also empty
-             worksheet.update_cell(1, 1, "")
+        if not sheet_header_row_from_a1:  # If A1 was also empty
+            worksheet.update_cell(1, 1, "")
         worksheet.freeze(rows=1)
-        print(f"Initialized data headers for '{worksheet.title}' from B1 and froze the first row. Column A1 is blank or preserved.")
-        
+        print(
+            f"Initialized data headers for '{worksheet.title}' from B1 and froze the first row. Column A1 is blank or preserved."
+        )
+
         data_headers_b_onwards = headers_for_b1_onwards
-        new_events_to_add_df = sanitized_df.copy() # All incoming events are new
-        existing_sheet_df = pd.DataFrame(columns=data_headers_b_onwards) # For consistent flow
-    
-    else: # Sheet has existing data headers from B1 onwards
+        new_events_to_add_df = sanitized_df.copy()  # All incoming events are new
+        existing_sheet_df = pd.DataFrame(
+            columns=data_headers_b_onwards
+        )  # For consistent flow
+
+    else:  # Sheet has existing data headers from B1 onwards
         data_for_df_b_onwards = []
         for r_idx, row_data_from_a in enumerate(sheet_data_rows_from_col_a):
-            actual_row_data_b_onwards = row_data_from_a[1:] if len(row_data_from_a) > 0 else []
+            actual_row_data_b_onwards = (
+                row_data_from_a[1:] if len(row_data_from_a) > 0 else []
+            )
             len_diff = len(data_headers_b_onwards) - len(actual_row_data_b_onwards)
-            if len_diff > 0: actual_row_data_b_onwards.extend([""] * len_diff)
-            elif len_diff < 0: actual_row_data_b_onwards = actual_row_data_b_onwards[:len(data_headers_b_onwards)]
+            if len_diff > 0:
+                actual_row_data_b_onwards.extend([""] * len_diff)
+            elif len_diff < 0:
+                actual_row_data_b_onwards = actual_row_data_b_onwards[
+                    : len(data_headers_b_onwards)
+                ]
             data_for_df_b_onwards.append(actual_row_data_b_onwards)
-        
-        if not data_for_df_b_onwards: existing_sheet_df = pd.DataFrame(columns=data_headers_b_onwards)
-        else: existing_sheet_df = pd.DataFrame(data_for_df_b_onwards, columns=data_headers_b_onwards)
 
-        sheet_has_key_cols = all(col in existing_sheet_df.columns for col in required_key_cols)
+        if not data_for_df_b_onwards:
+            existing_sheet_df = pd.DataFrame(columns=data_headers_b_onwards)
+        else:
+            existing_sheet_df = pd.DataFrame(
+                data_for_df_b_onwards, columns=data_headers_b_onwards
+            )
+
+        sheet_has_key_cols = all(
+            col in existing_sheet_df.columns for col in required_key_cols
+        )
 
         if sheet_has_key_cols and not existing_sheet_df.empty:
             # Ensure key columns are strings before applying preparation
             for col in required_key_cols:
-                if col not in existing_sheet_df.columns: existing_sheet_df[col] = "" 
+                if col not in existing_sheet_df.columns:
+                    existing_sheet_df[col] = ""
                 existing_sheet_df[col] = existing_sheet_df[col].astype(str)
-            
+
             # Create unique keys for existing events using prepared (stripped) components
             existing_sheet_df["unique_key"] = (
-                existing_sheet_df["title"].apply(prepare_key_component) +
-                existing_sheet_df["start_date"].apply(prepare_key_component) +
-                existing_sheet_df["location"].apply(prepare_key_component) +
-                existing_sheet_df["source"].apply(prepare_key_component)
+                existing_sheet_df["title"].apply(prepare_key_component)
+                + existing_sheet_df["start_date"].apply(prepare_key_component)
+                + existing_sheet_df["location"].apply(prepare_key_component)
+                + existing_sheet_df["source"].apply(prepare_key_component)
             )
-            new_events_to_add_df = sanitized_df[~sanitized_df["unique_key"].isin(existing_sheet_df["unique_key"])]
-        elif existing_sheet_df.empty: 
-            new_events_to_add_df = sanitized_df.copy() # All incoming events are new
-        else: 
-            print(f"Warning: Existing sheet '{worksheet.title}' (data from B onwards) is missing one or more key columns ({required_key_cols}) in its headers. Duplicate check might be incomplete.")
+            new_events_to_add_df = sanitized_df[
+                ~sanitized_df["unique_key"].isin(existing_sheet_df["unique_key"])
+            ]
+        elif existing_sheet_df.empty:
+            new_events_to_add_df = sanitized_df.copy()  # All incoming events are new
+        else:
+            print(
+                f"Warning: Existing sheet '{worksheet.title}' (data from B onwards) is missing one or more key columns ({required_key_cols}) in its headers. Duplicate check might be incomplete."
+            )
             # Fallback if unique_key somehow exists (less likely to be prepared/stripped consistently)
-            if "unique_key" in existing_sheet_df.columns and "unique_key" in sanitized_df.columns :
-                 new_events_to_add_df = sanitized_df[~sanitized_df["unique_key"].isin(existing_sheet_df["unique_key"])]
+            if (
+                "unique_key" in existing_sheet_df.columns
+                and "unique_key" in sanitized_df.columns
+            ):
+                new_events_to_add_df = sanitized_df[
+                    ~sanitized_df["unique_key"].isin(existing_sheet_df["unique_key"])
+                ]
             else:
-                 new_events_to_add_df = sanitized_df.copy() # Assume all new if robust check isn't possible
+                new_events_to_add_df = (
+                    sanitized_df.copy()
+                )  # Assume all new if robust check isn't possible
 
     if new_events_to_add_df.empty:
         print(f"No new events to add to '{worksheet.title}' after duplicate checking.")
@@ -195,14 +241,20 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
     # 4. Prepare rows for GSpread insertion (using original, non-stripped data for sheet cells)
     final_rows_to_insert = []
     # df_for_insertion contains original (or list-sanitized) data, NOT the key-stripped data
-    df_for_insertion = new_events_to_add_df.drop(columns=["unique_key"], errors="ignore")
+    df_for_insertion = new_events_to_add_df.drop(
+        columns=["unique_key"], errors="ignore"
+    )
 
     for _, event_series in df_for_insertion.iterrows():
         row_for_b_onwards = []
-        for header_b in data_headers_b_onwards: # Iterate based on sheet's data headers (B1 onwards)
+        for header_b in (
+            data_headers_b_onwards
+        ):  # Iterate based on sheet's data headers (B1 onwards)
             # Get the original value for the cell, not the stripped one used in the key
             row_for_b_onwards.append(str(event_series.get(header_b, "")))
-        final_row_with_blank_a = [""] + row_for_b_onwards # Prepend empty string for Column A
+        final_row_with_blank_a = [
+            ""
+        ] + row_for_b_onwards  # Prepend empty string for Column A
         final_rows_to_insert.append(final_row_with_blank_a)
 
     if not final_rows_to_insert:
@@ -211,12 +263,20 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
 
     # 5. Insert new rows into Google Sheet
     try:
-        worksheet.insert_rows(final_rows_to_insert, row=2, value_input_option="USER_ENTERED")
-        print(f"Successfully inserted {len(final_rows_to_insert)} new event(s) into '{worksheet.title}' (data from Col B, Col A is blank).")
+        worksheet.insert_rows(
+            final_rows_to_insert, row=2, value_input_option="USER_ENTERED"
+        )
+        print(
+            f"Successfully inserted {len(final_rows_to_insert)} new event(s) into '{worksheet.title}' (data from Col B, Col A is blank)."
+        )
     except gspread.exceptions.APIError as e:
-        print(f"API Error inserting rows into '{worksheet.title}': {e}. This could be a quota issue or data format problem.")
+        print(
+            f"API Error inserting rows into '{worksheet.title}': {e}. This could be a quota issue or data format problem."
+        )
     except Exception as e:
-        print(f"An unexpected error occurred during row insertion into '{worksheet.title}': {e}")
+        print(
+            f"An unexpected error occurred during row insertion into '{worksheet.title}': {e}"
+        )
 
 
 ####### Run #######
