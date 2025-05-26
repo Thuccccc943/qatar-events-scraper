@@ -59,7 +59,7 @@ def run_scrapers(scrapers: list) -> List[Event]:
             if save_to_google_sheets:
                 events_df = pd.DataFrame([event.to_dict() for event in events])
                 worksheet = worksheets[scraper.source_name]
-                append_new_events_to_sheet(events_df, worksheet)
+                # append_new_events_to_sheet(events_df, worksheet)
             all_events.extend(events)
             print(f"Found {len(events)} events from {scraper.source_name}")
 
@@ -82,172 +82,141 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
         print(f"No new events DataFrame to process for worksheet '{worksheet.title}'.")
         return
 
-    # Sanitize list-type values in the incoming DataFrame
-    # It's crucial to operate on a copy to avoid SettingWithCopyWarning
+    def prepare_key_component(value: any) -> str:
+        s = str(value).strip().lower()
+        
+        # Characters to remove for key generation
+        # Focus on apostrophes and similar quote-like characters as per user feedback
+        chars_to_remove = ["'", "’", "‘", "`"]
+        for char in chars_to_remove:
+            s = s.replace(char, "")
+        return s
+
+    # 1. Sanitize incoming DataFrame (for list conversion, etc.)
     sanitized_df = events_df.copy()
-
-    def sanitize(value):
-        if isinstance(value, list):
-            return ", ".join(str(v) for v in value)
+    def sanitize_df_values(value): # Converts lists in cells to strings
+        if isinstance(value, list): return ", ".join(str(v) for v in value)
         return value
-
     for col in sanitized_df.columns:
-        sanitized_df[col] = sanitized_df[col].apply(sanitize)
+        sanitized_df[col] = sanitized_df[col].apply(sanitize_df_values)
 
-    # Define required columns for the unique key and ensure they exist
     required_key_cols = ["title", "start_date", "location", "source"]
-    missing_key_cols = [
-        col for col in required_key_cols if col not in sanitized_df.columns
-    ]
+    missing_key_cols = [col for col in required_key_cols if col not in sanitized_df.columns]
     if missing_key_cols:
-        print(
-            f"Warning: DataFrame for '{worksheet.title}' is missing required key columns: {missing_key_cols}. Cannot reliably generate unique keys or check duplicates."
-        )
-        # Decide behavior: either return, or attempt to proceed without robust duplicate checking.
-        # For now, let's allow it to proceed, but unique key will be less effective.
-        for col in missing_key_cols:
-            sanitized_df[col] = ""  # Add missing key columns as empty strings
-
+        print(f"Warning: Incoming DataFrame for '{worksheet.title}' is missing key columns: {missing_key_cols}. Adding as empty strings for key generation.")
+        for col in missing_key_cols: sanitized_df[col] = ""
+    
+    # Create unique keys for new events using prepared (stripped) components
     sanitized_df["unique_key"] = (
-        sanitized_df["title"].astype(str)
-        + sanitized_df["start_date"].astype(str)
-        + sanitized_df["location"].astype(str)
-        + sanitized_df["source"].astype(str)
+        sanitized_df["title"].apply(prepare_key_component) +
+        sanitized_df["start_date"].apply(prepare_key_component) +
+        sanitized_df["location"].apply(prepare_key_component) +
+        sanitized_df["source"].apply(prepare_key_component)
     )
 
-    # Get existing data from the sheet
+    # 2. Get existing data from the sheet
     try:
-        all_sheet_values = worksheet.get_all_values()
+        all_sheet_cells = worksheet.get_all_values()
     except gspread.exceptions.APIError as e:
-        print(
-            f"Error fetching data from worksheet '{worksheet.title}': {e}. Quota likely exceeded or API issue."
-        )
+        print(f"Error fetching data from worksheet '{worksheet.title}': {e}. Quota likely exceeded or API issue.")
         return
 
-    existing_headers = []
-    existing_data_rows_values = []
+    sheet_header_row_from_a1 = []
+    sheet_data_rows_from_col_a = []
 
-    if all_sheet_values:
-        existing_headers = all_sheet_values[0]
-        existing_data_rows_values = all_sheet_values[1:]
+    if all_sheet_cells and all_sheet_cells != [[]]:
+        sheet_header_row_from_a1 = all_sheet_cells[0]
+        if len(all_sheet_cells) > 1:
+            sheet_data_rows_from_col_a = all_sheet_cells[1:]
 
-    # Handle sheet initialization (if empty or no headers)
-    if not existing_headers:
-        # Sheet is empty or headerless. Initialize with headers from the current events_df.
-        # The 'unique_key' column is temporary and should not be a header in the sheet.
-        new_headers = [col for col in sanitized_df.columns if col != "unique_key"]
+    data_headers_b_onwards = sheet_header_row_from_a1[1:] if len(sheet_header_row_from_a1) > 0 else []
+    new_events_to_add_df = pd.DataFrame()
 
-        if not new_headers:
-            print(
-                f"Cannot initialize headers for '{worksheet.title}' as sanitized_df (excluding unique_key) has no columns."
-            )
+    # 3. Handle sheet initialization or prepare existing data for comparison
+    if not data_headers_b_onwards: # If B1 onwards is unheadered
+        print(f"Sheet '{worksheet.title}' has no data headers from B1 onwards. Initializing headers.")
+        headers_for_b1_onwards = [col for col in sanitized_df.columns if col != "unique_key"]
+        if not headers_for_b1_onwards:
+            print(f"Cannot initialize headers for '{worksheet.title}': no data columns in DataFrame (excluding unique_key).")
             return
 
-        worksheet.update([new_headers], range_name="B1")
-        worksheet.freeze(rows=1)  # Freeze the header row
-        print(
-            f"Initialized headers for empty sheet '{worksheet.title}' and froze the first row."
-        )
-        existing_headers = new_headers  # Update for current processing
+        worksheet.update([headers_for_b1_onwards], range_name="B1")
+        if not sheet_header_row_from_a1: # If A1 was also empty
+             worksheet.update_cell(1, 1, "")
+        worksheet.freeze(rows=1)
+        print(f"Initialized data headers for '{worksheet.title}' from B1 and froze the first row. Column A1 is blank or preserved.")
+        
+        data_headers_b_onwards = headers_for_b1_onwards
+        new_events_to_add_df = sanitized_df.copy() # All incoming events are new
+        existing_sheet_df = pd.DataFrame(columns=data_headers_b_onwards) # For consistent flow
+    
+    else: # Sheet has existing data headers from B1 onwards
+        data_for_df_b_onwards = []
+        for r_idx, row_data_from_a in enumerate(sheet_data_rows_from_col_a):
+            actual_row_data_b_onwards = row_data_from_a[1:] if len(row_data_from_a) > 0 else []
+            len_diff = len(data_headers_b_onwards) - len(actual_row_data_b_onwards)
+            if len_diff > 0: actual_row_data_b_onwards.extend([""] * len_diff)
+            elif len_diff < 0: actual_row_data_b_onwards = actual_row_data_b_onwards[:len(data_headers_b_onwards)]
+            data_for_df_b_onwards.append(actual_row_data_b_onwards)
+        
+        if not data_for_df_b_onwards: existing_sheet_df = pd.DataFrame(columns=data_headers_b_onwards)
+        else: existing_sheet_df = pd.DataFrame(data_for_df_b_onwards, columns=data_headers_b_onwards)
 
-        # All incoming events are considered new as the sheet was empty
-        new_events_to_add_df = sanitized_df.copy()
-    else:
-        # Sheet has headers. Proceed with duplicate checking.
-        if not existing_data_rows_values:  # Headers exist, but no data rows
-            existing_df_for_keys = pd.DataFrame(columns=existing_headers)
-        else:
-            existing_df_for_keys = pd.DataFrame(
-                existing_data_rows_values, columns=existing_headers
-            )
+        sheet_has_key_cols = all(col in existing_sheet_df.columns for col in required_key_cols)
 
-        # Check if required key columns exist in the *sheet's* headers for creating existing unique keys
-        sheet_has_key_cols = all(
-            col in existing_df_for_keys.columns for col in required_key_cols
-        )
-
-        if sheet_has_key_cols and not existing_df_for_keys.empty:
-            # Create unique_key for existing sheet data
-            existing_df_for_keys["unique_key"] = (
-                existing_df_for_keys["title"].astype(str)
-                + existing_df_for_keys["start_date"].astype(str)
-                + existing_df_for_keys["location"].astype(str)
-                + existing_df_for_keys["source"].astype(str)
+        if sheet_has_key_cols and not existing_sheet_df.empty:
+            # Ensure key columns are strings before applying preparation
+            for col in required_key_cols:
+                if col not in existing_sheet_df.columns: existing_sheet_df[col] = "" 
+                existing_sheet_df[col] = existing_sheet_df[col].astype(str)
+            
+            # Create unique keys for existing events using prepared (stripped) components
+            existing_sheet_df["unique_key"] = (
+                existing_sheet_df["title"].apply(prepare_key_component) +
+                existing_sheet_df["start_date"].apply(prepare_key_component) +
+                existing_sheet_df["location"].apply(prepare_key_component) +
+                existing_sheet_df["source"].apply(prepare_key_component)
             )
-            # Filter out events that already exist
-            new_events_to_add_df = sanitized_df[
-                ~sanitized_df["unique_key"].isin(existing_df_for_keys["unique_key"])
-            ]
-        elif existing_df_for_keys.empty:  # Headers exist, but no data rows
-            new_events_to_add_df = sanitized_df.copy()  # All incoming events are new
-        else:  # Sheet exists but missing key columns for robust duplicate check
-            print(
-                f"Warning: Existing sheet '{worksheet.title}' is missing one or more key columns ({required_key_cols}) in its headers. Duplicate check might be incomplete. Assuming incoming events are new if not found by any existing 'unique_key' column."
-            )
-            if (
-                "unique_key" in existing_df_for_keys.columns
-            ):  # Check if a 'unique_key' col somehow exists
-                new_events_to_add_df = sanitized_df[
-                    ~sanitized_df["unique_key"].isin(existing_df_for_keys["unique_key"])
-                ]
-            else:  # Cannot perform unique key check, assume all are new
-                new_events_to_add_df = sanitized_df.copy()
+            new_events_to_add_df = sanitized_df[~sanitized_df["unique_key"].isin(existing_sheet_df["unique_key"])]
+        elif existing_sheet_df.empty: 
+            new_events_to_add_df = sanitized_df.copy() # All incoming events are new
+        else: 
+            print(f"Warning: Existing sheet '{worksheet.title}' (data from B onwards) is missing one or more key columns ({required_key_cols}) in its headers. Duplicate check might be incomplete.")
+            # Fallback if unique_key somehow exists (less likely to be prepared/stripped consistently)
+            if "unique_key" in existing_sheet_df.columns and "unique_key" in sanitized_df.columns :
+                 new_events_to_add_df = sanitized_df[~sanitized_df["unique_key"].isin(existing_sheet_df["unique_key"])]
+            else:
+                 new_events_to_add_df = sanitized_df.copy() # Assume all new if robust check isn't possible
 
     if new_events_to_add_df.empty:
         print(f"No new events to add to '{worksheet.title}' after duplicate checking.")
         return
 
-    # Prepare rows for insertion, aligning with existing sheet headers
-    # This ensures manually added columns in the sheet are respected.
-    final_rows_to_insert_values = []
-    # Use a copy of new_events_to_add_df, dropping the temporary 'unique_key' column
-    # as it should not be written to the sheet itself.
-    df_for_insertion = new_events_to_add_df.drop(
-        columns=["unique_key"], errors="ignore"
-    )
+    # 4. Prepare rows for GSpread insertion (using original, non-stripped data for sheet cells)
+    final_rows_to_insert = []
+    # df_for_insertion contains original (or list-sanitized) data, NOT the key-stripped data
+    df_for_insertion = new_events_to_add_df.drop(columns=["unique_key"], errors="ignore")
 
-    for _, event_data_series in df_for_insertion.iterrows():
-        row_values = []
-        """
-        For a newly initialized sheet the below line is necessary for aligning, however, on subsequent runs this line should
-        not be active, I'm foregoing a fix since for our use case it doesn't matter.
-        """
-        # row_values = [""]
-        for (
-            header_name
-        ) in existing_headers:  # Iterate in the order of the sheet's current headers
-            if header_name in event_data_series:
-                row_values.append(event_data_series[header_name])
-            else:
-                # This column exists in the sheet (e.g., "Review") but not in the new event data
-                row_values.append("")  # Add an empty string for this cell
-        final_rows_to_insert_values.append(row_values)
+    for _, event_series in df_for_insertion.iterrows():
+        row_for_b_onwards = []
+        for header_b in data_headers_b_onwards: # Iterate based on sheet's data headers (B1 onwards)
+            # Get the original value for the cell, not the stripped one used in the key
+            row_for_b_onwards.append(str(event_series.get(header_b, "")))
+        final_row_with_blank_a = [""] + row_for_b_onwards # Prepend empty string for Column A
+        final_rows_to_insert.append(final_row_with_blank_a)
 
-    if not final_rows_to_insert_values:
-        print(
-            f"No event rows prepared for insertion into '{worksheet.title}' (this might happen if all new events were filtered out or column alignment failed)."
-        )
+    if not final_rows_to_insert:
+        print(f"No event rows prepared for insertion into '{worksheet.title}'.")
         return
 
-    # Insert new rows into the Google Sheet, insert automatically deals with shifting other rows
+    # 5. Insert new rows into Google Sheet
     try:
-        # `insert_rows` is 1-indexed for the `row` parameter.
-        # Inserting at row 2 pushes existing content (from row 2 downwards) down.
-        worksheet.insert_rows(
-            final_rows_to_insert_values, row=2, value_input_option="USER_ENTERED"
-        )
-        print(
-            f"Successfully inserted {len(final_rows_to_insert_values)} new event(s) into '{worksheet.title}' at the top (after headers)."
-        )
+        worksheet.insert_rows(final_rows_to_insert, row=2, value_input_option="USER_ENTERED")
+        print(f"Successfully inserted {len(final_rows_to_insert)} new event(s) into '{worksheet.title}' (data from Col B, Col A is blank).")
     except gspread.exceptions.APIError as e:
-        print(
-            f"API Error inserting rows into '{worksheet.title}': {e}. This could be a quota issue or data format problem."
-        )
-        # Potentially log more details about final_rows_to_insert_values if error persists
+        print(f"API Error inserting rows into '{worksheet.title}': {e}. This could be a quota issue or data format problem.")
     except Exception as e:
-        print(
-            f"An unexpected error occurred during row insertion into '{worksheet.title}': {e}"
-        )
+        print(f"An unexpected error occurred during row insertion into '{worksheet.title}': {e}")
 
 
 ####### Run #######
