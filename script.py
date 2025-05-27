@@ -87,7 +87,7 @@ def append_new_events_to_sheet(events_df: pd.DataFrame, worksheet: gspread.Works
 
         # Characters to remove for key generation
         # Focus on apostrophes and similar quote-like characters as per user feedback
-        chars_to_remove = ["'", "’", "‘", "`"]
+        chars_to_remove = ["'", "’", "‘", "`", '"']
         for char in chars_to_remove:
             s = s.replace(char, "")
         return s
