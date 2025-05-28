@@ -27,6 +27,9 @@ jobs:
           
       - name: Run script
         run: python script.py
+
+      - name: Run dedupe
+        run: python utils/dedupe_events.py
         
       - name: Clean up credentials
         run: rm -f credentials.json  # Remove credentials after run

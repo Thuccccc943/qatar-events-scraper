@@ -26,7 +26,7 @@ def prepare_key_component(value: any) -> str:
     return s
 
 
-def deduplicate_combined_sheet_batched():
+def deduplicate_combined_sheet_batched(worksheet_name):
     """
     Deduplicates the "Combined" sheet using batch operations for reads and writes
     to respect API quotas.
@@ -39,7 +39,6 @@ def deduplicate_combined_sheet_batched():
     ]
     creds_path = "../credentials.json"
     spreadsheet_name = "Event Scrapes"
-    worksheet_name = "Combined"
 
     print(
         f"Attempting to connect to Google Sheet: '{spreadsheet_name} -> {worksheet_name}'..."
@@ -289,4 +288,7 @@ def deduplicate_combined_sheet_batched():
 
 
 if __name__ == "__main__":
-    deduplicate_combined_sheet_batched()
+    deduplicate_combined_sheet_batched("Combined")
+    deduplicate_combined_sheet_batched("ILoveQatar")
+    deduplicate_combined_sheet_batched("QatarMuseums")
+    deduplicate_combined_sheet_batched("VisitQatar")
