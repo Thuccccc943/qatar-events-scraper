@@ -37,7 +37,7 @@ def deduplicate_combined_sheet_batched(worksheet_name):
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds_path = "../credentials.json"
+    creds_path = "credentials.json"
     spreadsheet_name = "Event Scrapes"
 
     print(
