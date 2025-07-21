@@ -49,3 +49,5 @@ to setup automation on your own account clone this repo, see the **Setup Google 
 2. Click "New repository secret"
 3. Name it CREDENTIALS_JSON and paste the entire content of your credentials.json file
 4. Click "Add Secret"
+
+Update
